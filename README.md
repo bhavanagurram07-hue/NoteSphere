@@ -337,16 +337,16 @@ npm run admin:create
 
 ## 18. Project Team Details
 
-**College/Institution:** [Your College / University Name Here]  
+**College/Institution:** [Vignan University]  
 **Department:** Department of Computer Science & Engineering  
 **Academic Year:** 2025–2026  
-**Team Name:** Team Nexus
+**Team Name:** Creative Core
 
 | S.No | Student Name | Registration / Roll No | Project Role | Email |
 |---|---|---|---|---|
-| 1 | **[Student 1 Full Name]** | [e.g. 22BCSE101] | Team Lead & Backend Developer | student1@campus.edu |
-| 2 | **[Student 2 Full Name]** | [e.g. 22BCSE102] | Frontend & UI/UX Developer | student2@campus.edu |
-| 3 | **[Student 3 Full Name]** | [e.g. 22BCSE103] | Database Architect & QA Tester | student3@campus.edu |
+| 1 | **[Bhavana Gurram]** | [241FA04071] | Team Lead & Backend Developer | vu.241fa04071@gmail.com |
+| 2 | **[Joshna Thulimilli]** | [241FA04088] | Frontend & UI/UX Developer | vu.241fa04088@gmail.com |
+| 3 | **[Srilakshmi Lella]** | [241FA04642] | Database Architect & QA Tester | vu.241fa04642@gmail.com |
 
 ---
 
