@@ -1,0 +1,64 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 757 >>
+stream
+BT
+/F1 22 Tf
+50 720 Td
+(NoteSphere Academic Repository) Tj
+0 -35 Td
+/F1 16 Tf
+(Operating Systems End-Semester Solved Question Papers 2021-2025) Tj
+0 -28 Td
+/F2 12 Tf
+(Subject: Operating Systems) Tj
+0 -20 Td
+(Department: Computer Science) Tj
+0 -20 Td
+(Status: Verified & Approved Academic Resource) Tj
+0 -40 Td
+/F1 14 Tf
+(Course Overview & Key Concepts) Tj
+0 -22 Td
+/F2 11 Tf
+(1. Comprehensive Lecture Notes and Summary of Core Modules) Tj
+0 -18 Td
+(2. Mathematical Formulations, Key Lemmas, and Theoretical Proofs) Tj
+0 -18 Td
+(3. High-Yield University Exam Questions with Model Solutions) Tj
+0 -18 Td
+(4. Practical Laboratory Implementations, Code Snippets & Case Studies) Tj
+0 -40 Td
+(This verified academic material was downloaded from NoteSphere.) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000251 00000 n 
+0000001059 00000 n 
+0000001134 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+1204
+%%EOF

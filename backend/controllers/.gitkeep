@@ -1,0 +1,3 @@
+// NoteSphere - Controllers Directory
+// This directory contains request handling logic for auth, notes, users, etc.
+// Specific controller implementations (authController.js, noteController.js) will be added in Phase 2 & 3.
