@@ -1,3 +1,4 @@
+
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
@@ -25,9 +26,14 @@ connectDB();
 
 // Setup Cross-Origin Resource Sharing (CORS)
 const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+
 app.use(
   cors({
-    origin: [clientUrl, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: [
+      clientUrl,
+      'http://localhost:5173',
+      'http://127.0.0.1:5173',
+    ],
     credentials: true,
   })
 );
@@ -76,26 +82,36 @@ app.use(errorHandler);
 
 // Start Server
 const PORT = process.env.PORT || 5000;
-const HOST = process.env.HOST || '127.0.0.1';
+const HOST = '0.0.0.0';
+
 let server;
 
 if (require.main === module) {
   server = app.listen(PORT, HOST, () => {
-    console.log(`===============================================`);
-    console.log(` NoteSphere Backend Server Running on http://${HOST}:${PORT}`);
-    console.log(` Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(` Health check: http://localhost:${PORT}/api/health`);
-    console.log(`===============================================`);
+    console.log('===============================================');
+    console.log(
+      ` NoteSphere Backend Server Running on http://${HOST}:${PORT}`
+    );
+    console.log(
+      ` Environment: ${process.env.NODE_ENV || 'development'}`
+    );
+    console.log(
+      ` Health check: http://localhost:${PORT}/api/health`
+    );
+    console.log('===============================================');
   });
 
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-      console.error(`\n[PORT CONFLICT] Port ${PORT} (${HOST}) is already in use by another running node process:`, err.message);
-      console.error(`To free up port ${PORT} immediately, run:`);
-      console.error(`  Stop-Process -Name node -Force`);
-      console.error(`Then re-run: npm --prefix backend run dev\n`);
+      console.error(
+        `\n[PORT CONFLICT] Port ${PORT} is already in use:`,
+        err.message
+      );
       process.exit(1);
     }
+
+    console.error('[SERVER ERROR]:', err);
+    process.exit(1);
   });
 }
 
@@ -103,3 +119,4 @@ app.server = server;
 module.exports = app;
 module.exports.app = app;
 module.exports.server = server;
+```
