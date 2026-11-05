@@ -1,378 +1,387 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import {
   ArrowLeft,
   Download,
   Bookmark,
   Star,
-  FileText,
   Calendar,
-  User,
-  Building2,
+  Layers,
   GraduationCap,
-  AlertCircle,
-  ZoomIn,
-  ZoomOut,
+  FileText,
+  ExternalLink,
 } from 'lucide-react';
-
 import { useResources } from '../context/ResourceContext';
-import { useAuth } from '../context/AuthContext';
 import Button from '../components/common/Button';
-import Badge from '../components/common/Badge';
 
 const ResourceDetailsPage = () => {
   const { id } = useParams();
-  const navigate = useNavigate();
-
-  const {
-    resources,
-    recordDownload,
-    toggleBookmark,
-    isBookmarked,
-  } = useResources();
-
-  const { user } = useAuth();
+  const { resources, toggleBookmark } = useResources();
 
   const [resource, setResource] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(100);
 
   useEffect(() => {
-    const loadResource = async () => {
-      setIsLoading(true);
-
-      try {
-        const localMatch = resources.find(
-          (r) => (r._id || r.id) === id
-        );
-
-        if (localMatch) {
-          setResource(localMatch);
-          setIsLoading(false);
-          return;
-        }
-
-        setResource(null);
-      } catch (error) {
-        console.error('Error loading resource:', error);
-        setResource(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadResource();
-  }, [id, resources]);
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-10 h-10 border-4 border-brand-200 border-t-brand-600 rounded-full animate-spin mx-auto" />
-          <p className="mt-4 text-sm text-slate-500">
-            Loading resource...
-          </p>
-        </div>
-      </div>
+    const found = resources.find(
+      (item) => String(item._id || item.id) === String(id)
     );
-  }
+
+    setResource(found || null);
+  }, [id, resources]);
 
   if (!resource) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
         <div className="text-center">
-          <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+          <FileText className="mx-auto mb-4 text-slate-400" size={48} />
 
-          <h2 className="text-xl font-bold text-navy-900">
-            Resource Not Found
+          <h2 className="text-xl font-semibold text-slate-800">
+            Resource not found
           </h2>
 
-          <p className="text-sm text-slate-500 mt-2">
-            The requested resource could not be found.
-          </p>
-
-          <Button
-            variant="primary"
-            className="mt-5"
-            onClick={() => navigate('/resources')}
+          <Link
+            to="/resources"
+            className="inline-block mt-4 text-blue-600 hover:underline"
           >
-            <ArrowLeft className="w-4 h-4 mr-2" />
             Back to Resources
-          </Button>
+          </Link>
         </div>
       </div>
     );
   }
 
-  const resourceId = resource._id || resource.id;
+  const fileUrl = resource.fileUrl || '';
 
-  const bookmarked = isBookmarked
-    ? isBookmarked(resourceId)
-    : false;
+  // Backend URL used for PDF preview
+  const apiBaseUrl =
+    import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api';
 
-  const fileType = resource.fileType?.toLowerCase();
+  const previewUrl = resource._id
+    ? `${apiBaseUrl}/resources/${resource._id}/download?action=file`
+    : fileUrl;
 
-  const formattedSize = resource.fileSize
-    ? `${(resource.fileSize / 1024 / 1024).toFixed(2)} MB`
-    : 'Unknown size';
+  const fileType = String(resource.fileType || '').toLowerCase();
 
-  const handleDownload = async () => {
-    try {
-      await recordDownload(resourceId);
-    } catch (error) {
-      console.error('Download error:', error);
-    }
-  };
+  const isPdf =
+    fileType === 'pdf' ||
+    fileUrl.toLowerCase().includes('.pdf');
 
   const handleBookmark = async () => {
     try {
-      await toggleBookmark(resourceId);
+      await toggleBookmark(resource._id || resource.id);
     } catch (error) {
       console.error('Bookmark error:', error);
     }
   };
 
-  const zoomIn = () => {
-    setZoomLevel((prev) => Math.min(prev + 10, 150));
-  };
-
-  const zoomOut = () => {
-    setZoomLevel((prev) => Math.max(prev - 10, 70));
-  };
-
-  /*
-   * Google Docs Viewer needs a PUBLIC URL.
-   * Cloudinary gives us the public fileUrl.
-   */
-  const googleViewerUrl = resource.fileUrl
-    ? `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(
-        resource.fileUrl
-      )}`
-    : '';
-
   return (
-    <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <div className="bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <button
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-brand-600 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </button>
-        </div>
-      </div>
+    <div className="min-h-screen bg-slate-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 
-      {/* Main */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Resource Information */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden mb-6">
-          <div className="p-5 sm:p-6">
-            <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-5">
-              <div className="flex-1">
-                <div className="flex flex-wrap items-center gap-2 mb-3">
-                  <Badge variant="primary">
-                    {resource.category || 'Academic Resource'}
-                  </Badge>
+        {/* Back */}
+        <Link
+          to="/resources"
+          className="inline-flex items-center gap-2 text-slate-600 hover:text-blue-600 mb-6"
+        >
+          <ArrowLeft size={18} />
+          Back to Resources
+        </Link>
 
-                  {resource.fileType && (
-                    <Badge variant="secondary">
-                      {resource.fileType.toUpperCase()}
-                    </Badge>
-                  )}
-                </div>
+        {/* Header */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
 
-                <h1 className="text-2xl sm:text-3xl font-bold text-navy-900">
+            <div className="flex gap-4">
+
+              <div className="w-14 h-14 rounded-xl bg-blue-100 flex items-center justify-center">
+                <FileText className="text-blue-600" size={28} />
+              </div>
+
+              <div>
+
+                <h1 className="text-2xl font-bold text-slate-900">
                   {resource.title}
                 </h1>
 
-                {resource.description && (
-                  <p className="text-sm text-slate-600 mt-3 max-w-3xl">
-                    {resource.description}
-                  </p>
-                )}
+                <p className="text-slate-500 mt-1">
+                  {resource.description || 'Academic resource'}
+                </p>
 
-                <div className="flex flex-wrap gap-4 mt-5 text-xs text-slate-500">
-                  <div className="flex items-center gap-1.5">
-                    <Building2 className="w-4 h-4" />
-                    {resource.department || 'Department'}
-                  </div>
+                <div className="flex flex-wrap gap-3 mt-4">
 
-                  <div className="flex items-center gap-1.5">
-                    <GraduationCap className="w-4 h-4" />
-                    {resource.semester || 'Semester'}
-                  </div>
+                  {resource.subject && (
+                    <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm">
+                      {resource.subject}
+                    </span>
+                  )}
 
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4" />
-                    {resource.createdAt
-                      ? new Date(resource.createdAt).toLocaleDateString()
-                      : 'Date unavailable'}
-                  </div>
+                  {resource.category && (
+                    <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-sm">
+                      {resource.category}
+                    </span>
+                  )}
 
-                  <div className="flex items-center gap-1.5">
-                    <User className="w-4 h-4" />
-                    {resource.uploadedBy?.name || 'Unknown user'}
-                  </div>
+                  {resource.fileType && (
+                    <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-sm uppercase">
+                      {resource.fileType}
+                    </span>
+                  )}
+
                 </div>
+
               </div>
 
-              {/* Actions */}
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleBookmark}
-                >
-                  <Bookmark
-                    className={`w-4 h-4 mr-1.5 ${
-                      bookmarked ? 'fill-current' : ''
-                    }`}
-                  />
-                  {bookmarked ? 'Bookmarked' : 'Bookmark'}
-                </Button>
+            </div>
 
-                <Button
-                  variant="primary"
-                  onClick={handleDownload}
+            <div className="flex gap-3">
+
+              <Button
+                variant="outline"
+                onClick={handleBookmark}
+              >
+                <Bookmark size={18} />
+
+                {resource.isBookmarked
+                  ? 'Bookmarked'
+                  : 'Bookmark'}
+              </Button>
+
+              {fileUrl && (
+                <a
+                  href={fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700"
                 >
-                  <Download className="w-4 h-4 mr-1.5" />
-                  Download ({formattedSize})
-                </Button>
+                  <ExternalLink size={18} />
+                  Open File
+                </a>
+              )}
+
+            </div>
+
+          </div>
+        </div>
+
+        {/* Information */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+
+          {/* Department */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center gap-3">
+
+              <GraduationCap className="text-blue-600" />
+
+              <div>
+                <p className="text-xs text-slate-500">
+                  Department
+                </p>
+
+                <p className="font-medium text-slate-800">
+                  {resource.department || 'Computer Science'}
+                </p>
               </div>
+
             </div>
           </div>
-        </div>
 
-        {/* Preview Controls */}
-        <div className="bg-white border border-slate-200 rounded-t-2xl px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FileText className="w-5 h-5 text-brand-600" />
+          {/* Semester */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center gap-3">
 
-            <span className="text-sm font-semibold text-slate-700">
-              Document Preview
-            </span>
+              <Layers className="text-purple-600" />
+
+              <div>
+                <p className="text-xs text-slate-500">
+                  Semester
+                </p>
+
+                <p className="font-medium text-slate-800">
+                  {resource.semester || 'N/A'}
+                </p>
+              </div>
+
+            </div>
           </div>
 
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={zoomOut}
-              className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"
-              title="Zoom out"
-            >
-              <ZoomOut className="w-4 h-4" />
-            </button>
+          {/* Uploaded */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center gap-3">
 
-            <span className="text-xs font-semibold text-slate-500 min-w-[45px] text-center">
-              {zoomLevel}%
-            </span>
+              <Calendar className="text-green-600" />
 
-            <button
-              type="button"
-              onClick={zoomIn}
-              className="p-2 rounded-lg hover:bg-slate-100 text-slate-600"
-              title="Zoom in"
-            >
-              <ZoomIn className="w-4 h-4" />
-            </button>
+              <div>
+                <p className="text-xs text-slate-500">
+                  Uploaded
+                </p>
+
+                <p className="font-medium text-slate-800">
+                  {resource.createdAt
+                    ? new Date(
+                        resource.createdAt
+                      ).toLocaleDateString()
+                    : 'N/A'}
+                </p>
+              </div>
+
+            </div>
           </div>
+
+          {/* Rating */}
+          <div className="bg-white rounded-xl border border-slate-200 p-4">
+            <div className="flex items-center gap-3">
+
+              <Star className="text-yellow-500" />
+
+              <div>
+                <p className="text-xs text-slate-500">
+                  Rating
+                </p>
+
+                <p className="font-medium text-slate-800">
+                  {resource.rating || 'Not rated'}
+                </p>
+              </div>
+
+            </div>
+          </div>
+
         </div>
 
-        {/* Document Preview */}
-        <div className="bg-slate-100/80 p-4 sm:p-6 min-h-[500px] overflow-auto rounded-b-2xl border-x border-b border-slate-200">
-          {resource.fileUrl ? (
-            fileType === 'pdf' ? (
-              <div className="w-full bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+        {/* Preview */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+
+          {/* Preview Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-4 border-b border-slate-200">
+
+            <div>
+              <h2 className="font-semibold text-slate-900">
+                Document Preview
+              </h2>
+
+              <p className="text-sm text-slate-500">
+                {isPdf
+                  ? 'PDF document'
+                  : 'Preview is available only for PDF files'}
+              </p>
+            </div>
+
+            {/* Zoom Controls */}
+            {isPdf && (
+              <div className="flex items-center gap-2">
+
+                <button
+                  onClick={() =>
+                    setZoomLevel((prev) =>
+                      Math.max(50, prev - 10)
+                    )
+                  }
+                  className="px-3 py-1 border rounded-lg hover:bg-slate-50"
+                >
+                  −
+                </button>
+
+                <span className="text-sm font-medium min-w-[50px] text-center">
+                  {zoomLevel}%
+                </span>
+
+                <button
+                  onClick={() =>
+                    setZoomLevel((prev) =>
+                      Math.min(150, prev + 10)
+                    )
+                  }
+                  className="px-3 py-1 border rounded-lg hover:bg-slate-50"
+                >
+                  +
+                </button>
+
+              </div>
+            )}
+
+          </div>
+
+          {/* PDF Preview */}
+          {isPdf && fileUrl ? (
+
+            <div className="bg-slate-100 p-4 sm:p-6">
+
+              <div
+                className="bg-white rounded-xl border border-slate-200 overflow-hidden"
+                style={{
+                  width: `${100 / (zoomLevel / 100)}%`,
+                }}
+              >
+
                 <iframe
-                  src={googleViewerUrl}
+                  src={previewUrl}
                   title={resource.title}
                   className="w-full border-0"
                   style={{
                     height: '700px',
-                    minHeight: '700px',
-                    transform: `scale(${zoomLevel / 100})`,
-                    transformOrigin: 'top left',
-                    width: `${100 / (zoomLevel / 100)}%`,
                   }}
-                  allowFullScreen
                 />
+
               </div>
-            ) : (
-              <div className="min-h-[380px] flex flex-col items-center justify-center text-center space-y-4">
-                <div className="p-4 rounded-2xl bg-brand-50 border border-brand-200">
-                  <FileText className="w-10 h-10 text-brand-600" />
-                </div>
 
-                <div>
-                  <h3 className="text-base font-bold text-navy-900">
-                    {resource.title}
-                  </h3>
+              {/* Open PDF */}
+              <div className="mt-4 text-center">
 
-                  <p className="text-xs text-slate-500 mt-1">
-                    {resource.fileType?.toUpperCase()} document
-                  </p>
-                </div>
+                <p className="text-sm text-slate-500 mb-3">
+                  If the PDF does not appear above, open it directly.
+                </p>
 
-                <Button
-                  variant="primary"
-                  onClick={handleDownload}
+                <a
+                  href={previewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
-                  <Download className="w-4 h-4 mr-1.5" />
-                  Download Document
-                </Button>
+                  <ExternalLink size={18} />
+                  Open PDF
+                </a>
+
               </div>
-            )
+
+            </div>
+
           ) : (
-            <div className="min-h-[380px] flex items-center justify-center text-center">
-              <div className="space-y-2">
-                <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
 
-                <p className="text-sm font-semibold text-slate-700">
-                  Document preview unavailable
-                </p>
+            /* No Preview */
+            <div className="min-h-[400px] flex flex-col items-center justify-center p-8 text-center">
 
-                <p className="text-xs text-slate-500">
-                  The file URL is not available for this resource.
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+              <FileText
+                size={56}
+                className="text-slate-300 mb-4"
+              />
 
-        {/* Bottom Information */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-          <div className="bg-white rounded-2xl border border-slate-200 p-5">
-            <p className="text-xs text-slate-500">Downloads</p>
-            <p className="text-2xl font-bold text-navy-900 mt-1">
-              {resource.downloads || 0}
-            </p>
-          </div>
+              <h3 className="text-lg font-semibold text-slate-800">
+                No preview available
+              </h3>
 
-          <div className="bg-white rounded-2xl border border-slate-200 p-5">
-            <p className="text-xs text-slate-500">Rating</p>
-
-            <div className="flex items-center gap-1 mt-1">
-              <Star className="w-5 h-5 text-amber-400 fill-current" />
-
-              <p className="text-2xl font-bold text-navy-900">
-                {resource.averageRating
-                  ? Number(resource.averageRating).toFixed(1)
-                  : '0.0'}
+              <p className="text-slate-500 mt-2 mb-5">
+                This file type cannot be previewed in the browser.
               </p>
+
+              {fileUrl && (
+                <a
+                  href={fileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  <Download size={18} />
+                  Open / Download File
+                </a>
+              )}
+
             </div>
-          </div>
 
-          <div className="bg-white rounded-2xl border border-slate-200 p-5">
-            <p className="text-xs text-slate-500">File Size</p>
+          )}
 
-            <p className="text-2xl font-bold text-navy-900 mt-1">
-              {formattedSize}
-            </p>
-          </div>
         </div>
-      </main>
+
+      </div>
     </div>
   );
 };

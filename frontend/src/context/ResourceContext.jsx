@@ -1,6 +1,14 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+} from 'react';
+
 import resourceService from '../services/resourceService';
 import bookmarkService from '../services/bookmarkService';
+
 import { initialResources, initialCategories } from '../data/mockData';
 import { useToast } from './ToastContext';
 import { useAuth } from './AuthContext';
@@ -12,6 +20,9 @@ export const ResourceProvider = ({ children }) => {
   const { addToast } = useToast();
   const { user, isAuthenticated } = useAuth();
 
+  // =====================================================
+  // RESOURCES
+  // =====================================================
   const [resources, setResources] = useState(() => {
     const saved = localStorage.getItem('notesphere_resources');
     return saved ? JSON.parse(saved) : initialResources;
@@ -22,39 +33,66 @@ export const ResourceProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
 
+  // =====================================================
+  // BOOKMARKS
+  // =====================================================
   const [bookmarks, setBookmarks] = useState(() => {
     const saved = localStorage.getItem('notesphere_bookmarks');
     return saved ? JSON.parse(saved) : ['res-1', 'res-3'];
   });
 
+  // =====================================================
+  // UPVOTES
+  // =====================================================
   const [upvotes, setUpvotes] = useState(() => {
     const saved = localStorage.getItem('notesphere_upvotes');
     return saved ? JSON.parse(saved) : ['res-1', 'res-4'];
   });
 
-  // Load resources from backend API
+  // =====================================================
+  // LOAD RESOURCES FROM BACKEND
+  // =====================================================
   const fetchResources = useCallback(async (params = {}) => {
     setIsLoading(true);
+
     try {
       const data = await resourceService.getResources(params);
 
-      if (data?.success && data?.resources) {
-        const backendResources = data.resources;
+      console.log('[ResourceContext] Backend response:', data);
+
+      // Backend returns:
+      // {
+      //   success: true,
+      //   count: 11,
+      //   data: [...]
+      // }
+      if (data?.success && Array.isArray(data?.data)) {
+        const backendResources = data.data;
 
         setResources((prev) => {
           const backendIds = new Set(
-            backendResources.map((resource) => resource._id || resource.id)
+            backendResources.map(
+              (resource) => resource._id || resource.id
+            )
           );
 
+          // Keep local/mock resources that are not already
+          // present in backend
           const localResources = prev.filter(
-            (resource) => !backendIds.has(resource._id || resource.id)
+            (resource) =>
+              !backendIds.has(resource._id || resource.id)
           );
 
           return [...backendResources, ...localResources];
         });
 
         setTotalCount(
-          data.total || data.resources.length
+          data.count || data.data.length
+        );
+      } else {
+        console.warn(
+          '[ResourceContext] Unexpected backend response:',
+          data
         );
       }
     } catch (error) {
@@ -67,16 +105,21 @@ export const ResourceProvider = ({ children }) => {
     }
   }, []);
 
-  // Load current user uploads from backend API
+  // =====================================================
+  // LOAD CURRENT USER UPLOADS
+  // =====================================================
   const fetchMyUploads = useCallback(async () => {
     if (!isAuthenticated) {
       setUserUploads([]);
       return;
     }
+
     try {
       const data = await resourceService.getMyUploads();
-      if (data?.success && data?.resources) {
-        setUserUploads(data.resources);
+
+      // Backend also returns data: [...]
+      if (data?.success && Array.isArray(data?.data)) {
+        setUserUploads(data.data);
       }
     } catch (error) {
       // Fallback: match by author name or email
@@ -86,16 +129,20 @@ export const ResourceProvider = ({ children }) => {
           r.author?.name === user?.name ||
           r.author?.name === 'Alex Johnson'
       );
+
       setUserUploads(localMatches);
     }
   }, [isAuthenticated, user, resources]);
 
-  // Load user bookmarks from backend API
+  // =====================================================
+  // LOAD USER BOOKMARKS
+  // =====================================================
   const fetchMyBookmarks = useCallback(async () => {
     if (!isAuthenticated) {
       setMyBookmarks([]);
       return;
     }
+
     try {
       const [idsData, fullData] = await Promise.all([
         bookmarkService.getMyBookmarkIds(),
@@ -104,14 +151,22 @@ export const ResourceProvider = ({ children }) => {
 
       if (idsData?.success && idsData?.bookmarkIds) {
         setBookmarks(idsData.bookmarkIds);
+
         localStorage.setItem(
           'notesphere_bookmarks',
           JSON.stringify(idsData.bookmarkIds)
         );
       }
 
-      if (fullData?.success && fullData?.resources) {
-        setMyBookmarks(fullData.resources);
+      // Support both possible backend response names
+      const bookmarkResources =
+        fullData?.data || fullData?.resources;
+
+      if (
+        fullData?.success &&
+        Array.isArray(bookmarkResources)
+      ) {
+        setMyBookmarks(bookmarkResources);
       }
     } catch (error) {
       console.warn(
@@ -121,10 +176,16 @@ export const ResourceProvider = ({ children }) => {
     }
   }, [isAuthenticated]);
 
+  // =====================================================
+  // INITIAL RESOURCE LOAD
+  // =====================================================
   useEffect(() => {
     fetchResources();
   }, [fetchResources]);
 
+  // =====================================================
+  // LOAD USER DATA
+  // =====================================================
   useEffect(() => {
     if (isAuthenticated) {
       fetchMyUploads();
@@ -133,8 +194,15 @@ export const ResourceProvider = ({ children }) => {
       setUserUploads([]);
       setMyBookmarks([]);
     }
-  }, [isAuthenticated, fetchMyUploads, fetchMyBookmarks]);
+  }, [
+    isAuthenticated,
+    fetchMyUploads,
+    fetchMyBookmarks,
+  ]);
 
+  // =====================================================
+  // SAVE BOOKMARKS
+  // =====================================================
   useEffect(() => {
     localStorage.setItem(
       'notesphere_bookmarks',
@@ -142,6 +210,9 @@ export const ResourceProvider = ({ children }) => {
     );
   }, [bookmarks]);
 
+  // =====================================================
+  // SAVE UPVOTES
+  // =====================================================
   useEffect(() => {
     localStorage.setItem(
       'notesphere_upvotes',
@@ -149,7 +220,9 @@ export const ResourceProvider = ({ children }) => {
     );
   }, [upvotes]);
 
-  // Toggle bookmark with live backend persistence
+  // =====================================================
+  // TOGGLE BOOKMARK
+  // =====================================================
   const toggleBookmark = async (noteId) => {
     if (!noteId) return;
 
@@ -171,7 +244,8 @@ export const ResourceProvider = ({ children }) => {
     );
 
     try {
-      const data = await bookmarkService.toggleBookmark(noteId);
+      const data =
+        await bookmarkService.toggleBookmark(noteId);
 
       if (data?.success) {
         addToast(
@@ -180,20 +254,27 @@ export const ResourceProvider = ({ children }) => {
             : 'Removed from bookmarks',
           'success'
         );
+
         fetchMyBookmarks();
       }
     } catch (error) {
-      // Revert optimistic update on failure
+      // Revert optimistic update
       setBookmarks((prev) =>
         wasBookmarked
           ? [...prev, noteId]
           : prev.filter((id) => id !== noteId)
       );
-      addToast('Failed to update bookmark status', 'error');
+
+      addToast(
+        'Failed to update bookmark status',
+        'error'
+      );
     }
   };
 
-  // Toggle upvote
+  // =====================================================
+  // TOGGLE UPVOTE
+  // =====================================================
   const toggleUpvote = (noteId) => {
     const isUpvoted = upvotes.includes(noteId);
 
@@ -208,7 +289,8 @@ export const ResourceProvider = ({ children }) => {
         const id = res._id || res.id;
 
         if (id === noteId) {
-          const currentCount = res.upvotesCount || 0;
+          const currentCount =
+            res.upvotesCount || 0;
 
           return {
             ...res,
@@ -226,15 +308,20 @@ export const ResourceProvider = ({ children }) => {
     );
 
     addToast(
-      isUpvoted ? 'Upvote removed' : 'Upvoted this resource!',
+      isUpvoted
+        ? 'Upvote removed'
+        : 'Upvoted this resource!',
       'success'
     );
   };
 
-  // Real secure download via backend API
+  // =====================================================
+  // DOWNLOAD RESOURCE
+  // =====================================================
   const recordDownload = async (noteId) => {
     try {
-      const data = await resourceService.downloadResource(noteId);
+      const data =
+        await resourceService.downloadResource(noteId);
 
       if (data?.success) {
         setResources((prev) =>
@@ -244,8 +331,10 @@ export const ResourceProvider = ({ children }) => {
             if (id === noteId) {
               return {
                 ...res,
-                downloads: (res.downloads || 0) + 1,
-                downloadsCount: (res.downloadsCount || 0) + 1,
+                downloads:
+                  (res.downloads || 0) + 1,
+                downloadsCount:
+                  (res.downloadsCount || 0) + 1,
               };
             }
 
@@ -254,7 +343,8 @@ export const ResourceProvider = ({ children }) => {
         );
 
         const targetDownloadUrl =
-          data.directDownloadUrl || data.downloadUrl;
+          data.directDownloadUrl ||
+          data.downloadUrl;
 
         const targetFileName =
           data.fileName ||
@@ -266,14 +356,20 @@ export const ResourceProvider = ({ children }) => {
         );
 
         try {
-          // Attempt 1: Fetch as local binary Blob to force direct saving to user's Downloads folder
-          const fileResp = await fetch(targetDownloadUrl);
+          // Attempt 1:
+          // Fetch as Blob
+          const fileResp =
+            await fetch(targetDownloadUrl);
 
           if (fileResp.ok) {
             const blob = await fileResp.blob();
-            const blobUrl = window.URL.createObjectURL(blob);
 
-            const anchor = document.createElement('a');
+            const blobUrl =
+              window.URL.createObjectURL(blob);
+
+            const anchor =
+              document.createElement('a');
+
             anchor.href = blobUrl;
             anchor.download = targetFileName;
 
@@ -282,7 +378,10 @@ export const ResourceProvider = ({ children }) => {
             document.body.removeChild(anchor);
 
             setTimeout(
-              () => window.URL.revokeObjectURL(blobUrl),
+              () =>
+                window.URL.revokeObjectURL(
+                  blobUrl
+                ),
               2000
             );
 
@@ -296,11 +395,16 @@ export const ResourceProvider = ({ children }) => {
             );
           }
         } catch (fetchErr) {
-          // Attempt 2: Direct browser download trigger with attachment header
-          const anchor = document.createElement('a');
+          // Attempt 2:
+          // Direct browser download
+          const anchor =
+            document.createElement('a');
 
           anchor.href = targetDownloadUrl;
-          anchor.setAttribute('download', targetFileName);
+          anchor.setAttribute(
+            'download',
+            targetFileName
+          );
           anchor.target = '_blank';
 
           document.body.appendChild(anchor);
@@ -316,33 +420,46 @@ export const ResourceProvider = ({ children }) => {
         return data;
       }
     } catch (error) {
-      // Fallback: If backend is offline or during offline testing, generate academic PDF client-side
+      // Fallback for offline/local testing
       const currentItem = resources.find(
-        (r) => (r._id || r.id) === noteId
+        (r) =>
+          (r._id || r.id) === noteId
       );
 
       const cleanTitle = (
-        currentItem?.title || 'Academic_Resource'
+        currentItem?.title ||
+        'Academic_Resource'
       )
-        .replace(/[^a-zA-Z0-9_\-\s]/g, '')
+        .replace(
+          /[^a-zA-Z0-9_\-\s]/g,
+          ''
+        )
         .trim()
         .replace(/\s+/g, '_');
 
-      const fallbackFileName = `${cleanTitle}.pdf`;
+      const fallbackFileName =
+        `${cleanTitle}.pdf`;
 
       try {
-        const blob = generateAcademicPdfBlob(
-          currentItem?.title || cleanTitle,
-          currentItem?.subject || 'Academic Studies',
-          currentItem?.department || 'College Department',
-          currentItem?.author?.name ||
-            currentItem?.uploadedBy?.name ||
-            'NoteSphere Contributor'
-        );
+        const blob =
+          generateAcademicPdfBlob(
+            currentItem?.title ||
+              cleanTitle,
+            currentItem?.subject ||
+              'Academic Studies',
+            currentItem?.department ||
+              'College Department',
+            currentItem?.author?.name ||
+              currentItem?.uploadedBy?.name ||
+              'NoteSphere Contributor'
+          );
 
-        const blobUrl = window.URL.createObjectURL(blob);
+        const blobUrl =
+          window.URL.createObjectURL(blob);
 
-        const anchor = document.createElement('a');
+        const anchor =
+          document.createElement('a');
+
         anchor.href = blobUrl;
         anchor.download = fallbackFileName;
 
@@ -351,20 +468,26 @@ export const ResourceProvider = ({ children }) => {
         document.body.removeChild(anchor);
 
         setTimeout(
-          () => window.URL.revokeObjectURL(blobUrl),
+          () =>
+            window.URL.revokeObjectURL(
+              blobUrl
+            ),
           2000
         );
 
         setResources((prev) =>
           prev.map((res) => {
-            const id = res._id || res.id;
+            const id =
+              res._id || res.id;
 
             if (id === noteId) {
               return {
                 ...res,
-                downloads: (res.downloads || 0) + 1,
+                downloads:
+                  (res.downloads || 0) + 1,
                 downloadsCount:
-                  (res.downloadsCount || 0) + 1,
+                  (res.downloadsCount || 0) +
+                  1,
               };
             }
 
@@ -385,24 +508,51 @@ export const ResourceProvider = ({ children }) => {
     }
   };
 
-  // Upload new resource with real progress callback
-  const addResource = async (formData, onProgress) => {
+  // =====================================================
+  // ADD RESOURCE
+  // =====================================================
+  const addResource = async (
+    formData,
+    onProgress
+  ) => {
     try {
-      const data = await resourceService.uploadResource(
-        formData,
-        onProgress
-      );
+      const data =
+        await resourceService.uploadResource(
+          formData,
+          onProgress
+        );
 
-      if (data?.success && data?.resource) {
+      // Support backend response:
+      // {
+      //   success: true,
+      //   data: resource
+      // }
+      //
+      // and older frontend response:
+      // {
+      //   success: true,
+      //   resource: resource
+      // }
+      const createdResource =
+        data?.resource || data?.data;
+
+      if (
+        data?.success &&
+        createdResource
+      ) {
         setResources((prev) => [
-          data.resource,
+          createdResource,
           ...prev,
         ]);
 
         setUserUploads((prev) => [
-          data.resource,
+          createdResource,
           ...prev,
         ]);
+
+        setTotalCount(
+          (prev) => prev + 1
+        );
 
         addToast(
           'Resource published successfully to repository!',
@@ -411,9 +561,24 @@ export const ResourceProvider = ({ children }) => {
 
         return {
           success: true,
-          resource: data.resource,
+          resource: createdResource,
         };
       }
+
+      const errorMessage =
+        data?.message ||
+        'Failed to create resource';
+
+      addToast(
+        errorMessage,
+        'error'
+      );
+
+      return {
+        success: false,
+        error: errorMessage,
+      };
+
     } catch (error) {
       const msg =
         error.response?.data?.message ||
@@ -428,8 +593,13 @@ export const ResourceProvider = ({ children }) => {
     }
   };
 
-  // Edit resource
-  const updateResource = async (id, updateData) => {
+  // =====================================================
+  // UPDATE RESOURCE
+  // =====================================================
+  const updateResource = async (
+    id,
+    updateData
+  ) => {
     try {
       const data =
         await resourceService.updateResource(
@@ -437,11 +607,17 @@ export const ResourceProvider = ({ children }) => {
           updateData
         );
 
-      if (data?.success && data?.resource) {
+      const updatedResource =
+        data?.resource || data?.data;
+
+      if (
+        data?.success &&
+        updatedResource
+      ) {
         setResources((prev) =>
           prev.map((r) =>
             (r._id || r.id) === id
-              ? data.resource
+              ? updatedResource
               : r
           )
         );
@@ -449,7 +625,7 @@ export const ResourceProvider = ({ children }) => {
         setUserUploads((prev) =>
           prev.map((r) =>
             (r._id || r.id) === id
-              ? data.resource
+              ? updatedResource
               : r
           )
         );
@@ -461,9 +637,21 @@ export const ResourceProvider = ({ children }) => {
 
         return {
           success: true,
-          resource: data.resource,
+          resource: updatedResource,
         };
       }
+
+      const msg =
+        data?.message ||
+        'Failed to update resource';
+
+      addToast(msg, 'error');
+
+      return {
+        success: false,
+        error: msg,
+      };
+
     } catch (error) {
       const msg =
         error.response?.data?.message ||
@@ -478,32 +666,38 @@ export const ResourceProvider = ({ children }) => {
     }
   };
 
-  // Delete resource
+  // =====================================================
+  // DELETE RESOURCE
+  // =====================================================
   const deleteResource = async (id) => {
     try {
       await resourceService.deleteResource(id);
 
       setResources((prev) =>
         prev.filter(
-          (r) => (r._id || r.id) !== id
+          (r) =>
+            (r._id || r.id) !== id
         )
       );
 
       setUserUploads((prev) =>
         prev.filter(
-          (r) => (r._id || r.id) !== id
+          (r) =>
+            (r._id || r.id) !== id
         )
       );
 
       setBookmarks((prev) =>
         prev.filter(
-          (bookmarkId) => bookmarkId !== id
+          (bookmarkId) =>
+            bookmarkId !== id
         )
       );
 
       setMyBookmarks((prev) =>
         prev.filter(
-          (r) => (r._id || r.id) !== id
+          (r) =>
+            (r._id || r.id) !== id
         )
       );
 
@@ -512,7 +706,10 @@ export const ResourceProvider = ({ children }) => {
         'info'
       );
 
-      return { success: true };
+      return {
+        success: true,
+      };
+
     } catch (error) {
       const msg =
         error.response?.data?.message ||
@@ -527,32 +724,46 @@ export const ResourceProvider = ({ children }) => {
     }
   };
 
-  // Fallback combined list for bookmarks page
+  // =====================================================
+  // BOOKMARKED RESOURCES
+  // =====================================================
   const bookmarkedResources =
     myBookmarks.length > 0
       ? myBookmarks
       : resources.filter((res) =>
-          bookmarks.includes(res._id || res.id)
+          bookmarks.includes(
+            res._id || res.id
+          )
         );
 
+  // =====================================================
+  // PROVIDER
+  // =====================================================
   return (
     <ResourceContext.Provider
       value={{
         resources,
         categories: initialCategories,
+
         bookmarks,
         upvotes,
+
         userUploads,
         myBookmarks,
         bookmarkedResources,
+
         isLoading,
         totalCount,
+
         fetchResources,
         fetchMyUploads,
         fetchMyBookmarks,
+
         toggleBookmark,
         toggleUpvote,
+
         recordDownload,
+
         addResource,
         updateResource,
         deleteResource,
@@ -563,8 +774,12 @@ export const ResourceProvider = ({ children }) => {
   );
 };
 
+// ======================================================
+// HOOK
+// ======================================================
 export const useResources = () => {
-  const context = useContext(ResourceContext);
+  const context =
+    useContext(ResourceContext);
 
   if (!context) {
     throw new Error(

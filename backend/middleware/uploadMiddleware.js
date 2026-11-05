@@ -1,11 +1,17 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { Readable } = require('stream');
 const cloudinary = require('../config/cloudinary');
 
-// Allowed extensions
-const ALLOWED_EXTENSIONS = [
+// ======================================================
+// MULTER MEMORY STORAGE
+// ======================================================
+const storage = multer.memoryStorage();
+
+// ======================================================
+// ALLOWED FILE TYPES
+// ======================================================
+const allowedExtensions = [
   '.pdf',
   '.docx',
   '.doc',
@@ -15,232 +21,200 @@ const ALLOWED_EXTENSIONS = [
   '.txt',
 ];
 
-// Allowed MIME types
-const ALLOWED_MIME_TYPES = [
+const allowedMimeTypes = [
   'application/pdf',
-  'application/msword',
+
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.ms-powerpoint',
+  'application/msword',
+
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.ms-powerpoint',
+
   'application/epub+zip',
   'text/plain',
 ];
 
-// File validation
+// ======================================================
+// FILE FILTER
+// ======================================================
 const fileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
 
-  const isExtAllowed = ALLOWED_EXTENSIONS.includes(ext);
-  const isMimeAllowed = ALLOWED_MIME_TYPES.includes(file.mimetype);
-
-  if (isExtAllowed && isMimeAllowed) {
-    return cb(null, true);
+  if (
+    allowedExtensions.includes(ext) &&
+    allowedMimeTypes.includes(file.mimetype)
+  ) {
+    cb(null, true);
+  } else {
+    cb(
+      new Error(
+        'Invalid file type. Allowed: PDF, DOC, DOCX, PPT, PPTX, EPUB, TXT'
+      ),
+      false
+    );
   }
-
-  cb(
-    new Error(
-      `Invalid file type "${ext}". Only PDF, DOCX, DOC, PPT, PPTX, EPUB, and TXT files are permitted.`
-    ),
-    false
-  );
 };
 
-// Store uploaded file in memory
+// ======================================================
+// MULTER UPLOAD
+// ======================================================
 const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 25 * 1024 * 1024,
-  },
+  storage,
   fileFilter,
+  limits: {
+    fileSize: 20 * 1024 * 1024, // 20 MB
+  },
 });
 
-/**
- * Upload document to Cloudinary
- */
+// ======================================================
+// UPLOAD FILE TO CLOUDINARY
+// ======================================================
 const uploadDocument = async (file) => {
-  if (!file || !file.buffer) {
-    throw new Error('No file buffer received.');
-  }
+  try {
+    if (!file || !file.buffer) {
+      throw new Error('No file buffer received');
+    }
 
-  const sanitizedName = path
-    .basename(file.originalname, path.extname(file.originalname))
-    .replace(/[^a-zA-Z0-9_-]/g, '_');
+    const originalName = path.parse(file.originalname).name;
+    const extension = path.extname(file.originalname).toLowerCase();
 
-  // Check Cloudinary configuration
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    // Make filename Cloudinary-safe
+    const sanitizedName = originalName
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .replace(/_+/g, '_');
 
-  const cloudinaryConfigured =
-    cloudName &&
-    apiKey &&
-    apiSecret;
+    console.log(
+      `[Cloudinary] Uploading "${file.originalname}"...`
+    );
 
-  // ==========================================
-  // 1. UPLOAD TO CLOUDINARY
-  // ==========================================
-  if (cloudinaryConfigured) {
-    try {
-      console.log(
-        `[Cloudinary] Uploading "${file.originalname}"...`
+    const result = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder: 'notesphere/resources',
+          resource_type: 'raw',
+          public_id: `${Date.now()}_${sanitizedName}${extension}`,
+        },
+        (error, result) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve(result);
+          }
+        }
       );
 
-      const result = await new Promise((resolve, reject) => {
-        const uploadStream = cloudinary.uploader.upload_stream(
-          {
-            folder: 'notesphere/resources',
-            resource_type: 'raw',
-            public_id: `${Date.now()}_${sanitizedName}`,
-          },
-          (error, result) => {
-            if (error) {
-              reject(error);
-            } else {
-              resolve(result);
-            }
-          }
-        );
+      uploadStream.end(file.buffer);
+    });
 
-        Readable.from(file.buffer).pipe(uploadStream);
+    console.log(
+      `[Cloudinary] Upload successful: ${result.secure_url}`
+    );
+
+    // IMPORTANT:
+    // Attach Cloudinary information to the Multer file object
+    file.fileUrl = result.secure_url;
+    file.publicId = result.public_id;
+    file.fileType = extension.replace('.', '');
+    file.fileSize = file.size;
+
+    return file;
+
+  } catch (error) {
+    console.error(
+      '[Cloudinary Upload Error]:',
+      error.message
+    );
+
+    throw error;
+  }
+};
+
+
+// ======================================================
+// DELETE CLOUDINARY / LOCAL DOCUMENT
+// ======================================================
+const deleteDocument = async (publicId) => {
+  try {
+    if (!publicId) {
+      return;
+    }
+
+    // Cloudinary public IDs for NoteSphere
+    if (
+      typeof publicId === 'string' &&
+      publicId.startsWith('notesphere/')
+    ) {
+      await cloudinary.uploader.destroy(publicId, {
+        resource_type: 'raw',
       });
 
       console.log(
-        `[Cloudinary] Upload successful: ${result.secure_url}`
+        `[Cloudinary] Deleted: ${publicId}`
       );
 
-      return {
-        fileUrl: result.secure_url,
-        publicId: result.public_id,
-      };
-    } catch (cloudError) {
-      console.error(
-        '[Cloudinary ERROR]: Upload failed:',
-        cloudError.message
-      );
-
-      console.error(
-        '[Cloudinary ERROR DETAILS]:',
-        cloudError
-      );
-
-      // Continue to local fallback
-    }
-  } else {
-    console.warn(
-      '[Cloudinary] Credentials are missing. Using local storage.'
-    );
-  }
-
-  // ==========================================
-  // 2. LOCAL FALLBACK
-  // ==========================================
-  const uploadDir = path.join(
-    __dirname,
-    '../uploads/resources'
-  );
-
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, {
-      recursive: true,
-    });
-  }
-
-  const ext = path.extname(file.originalname).toLowerCase();
-
-  const filename =
-    `${Date.now()}_${sanitizedName}${ext}`;
-
-  const filePath = path.join(
-    uploadDir,
-    filename
-  );
-
-  fs.writeFileSync(
-    filePath,
-    file.buffer
-  );
-
-  const port = process.env.PORT || 5000;
-
-  const baseUrl =
-    process.env.BASE_URL ||
-    `http://localhost:${port}`;
-
-  const fileUrl =
-    `${baseUrl}/uploads/resources/${filename}`;
-
-  const publicId =
-    `local-${filename}`;
-
-  console.log(
-    `[Local Storage] File saved: ${fileUrl}`
-  );
-
-  return {
-    fileUrl,
-    publicId,
-  };
-};
-
-/**
- * Delete document
- */
-const deleteDocument = async (publicId) => {
-  if (!publicId) return;
-
-  // Delete local file
-  if (publicId.startsWith('local-')) {
-    const filename =
-      publicId.replace('local-', '');
-
-    const filePath = path.join(
-      __dirname,
-      '../uploads/resources',
-      filename
-    );
-
-    if (fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-
-        console.log(
-          `[Local Storage] Deleted: ${filename}`
-        );
-      } catch (error) {
-        console.error(
-          'Failed to delete local file:',
-          error.message
-        );
-      }
+      return;
     }
 
-    return;
-  }
+    // Local file fallback
+    if (fs.existsSync(publicId)) {
+      fs.unlinkSync(publicId);
 
-  // Delete Cloudinary file
-  try {
-    await cloudinary.uploader.destroy(
-      publicId,
-      {
-        resource_type: 'raw',
-      }
-    );
+      console.log(
+        `[Local Storage] Deleted: ${publicId}`
+      );
+    }
 
-    console.log(
-      `[Cloudinary] Deleted: ${publicId}`
-    );
   } catch (error) {
     console.error(
-      'Failed to delete Cloudinary file:',
+      '[Delete Document Error]:',
       error.message
     );
   }
 };
 
+
+// ======================================================
+// MIDDLEWARE: UPLOAD + CLOUDINARY
+// ======================================================
+const processUpload = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please upload a file',
+      });
+    }
+
+    // Upload to Cloudinary
+    await uploadDocument(req.file);
+
+    console.log(
+      '[Upload Middleware] Cloudinary information attached to req.file'
+    );
+
+    next();
+
+  } catch (error) {
+    console.error(
+      '[Upload Middleware Error]:',
+      error.message
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'File upload failed',
+      error: error.message,
+    });
+  }
+};
+
+
+// ======================================================
+// EXPORTS
+// ======================================================
 module.exports = {
   upload,
   uploadDocument,
   deleteDocument,
-  ALLOWED_EXTENSIONS,
-  ALLOWED_MIME_TYPES,
+  processUpload,
 };

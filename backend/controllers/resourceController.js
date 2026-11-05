@@ -1,187 +1,82 @@
-const path = require('path');
-const fs = require('fs');
 const mongoose = require('mongoose');
+const axios = require('axios');
+
 const Resource = require('../models/Resource');
-const { uploadDocument, deleteDocument } = require('../middleware/uploadMiddleware');
-const { generateValidPdf } = require('../utils/pdfGenerator');
+const User = require('../models/User');
+const { deleteDocument } = require('../middleware/uploadMiddleware');
 
-/**
- * @desc    Upload a new academic resource (PDF/DOCX/etc.)
- * @route   POST /api/resources
- * @access  Private (Authenticated users)
- */
-const createResource = async (req, res, next) => {
-  try {
-    const { title, description, subject, department, semester, category } = req.body;
 
-    // 1. Validate required text fields
-    if (!title || !description || !subject || !department || !semester || !category) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide all required fields: title, description, subject, department, semester, and category.',
-      });
-    }
-
-    // 2. Validate file existence
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please select a document file to upload (PDF, DOCX, DOC, PPT, PPTX, EPUB, TXT).',
-      });
-    }
-
-    // 3. Upload file to Cloudinary / storage engine
-    const { fileUrl, publicId } = await uploadDocument(req.file);
-
-    // 4. Save metadata in MongoDB
-    const ext = path.extname(req.file.originalname).replace('.', '').toLowerCase();
-
-    const resource = await Resource.create({
-      title: title.trim(),
-      description: description.trim(),
-      subject: subject.trim(),
-      department: department.trim(),
-      semester: semester.trim(),
-      category: category.trim(),
-      uploadedBy: req.user._id,
-      fileUrl,
-      publicId,
-      fileType: ext || 'pdf',
-      fileSize: req.file.size,
-      status: 'approved', // Live and ready for student discovery
-    });
-
-    const populatedResource = await Resource.findById(resource._id).populate(
-      'uploadedBy',
-      'name email profileImage department role'
-    );
-
-    res.status(201).json({
-      success: true,
-      message: 'Resource uploaded successfully',
-      resource: populatedResource,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Get all resources with search, department/semester/category filter, and sorting
- * @route   GET /api/resources
- * @access  Public
- */
-const getResources = async (req, res, next) => {
+// ======================================================
+// GET ALL RESOURCES
+// ======================================================
+const getResources = async (req, res) => {
   try {
     const {
-      q,
       search,
+      subject,
       department,
       semester,
       category,
-      status,
-      sort,
-      sortBy,
-      page = 1,
-      limit = 12,
+      status = 'approved',
     } = req.query;
 
     const query = {};
 
-    // Only show approved resources publicly (unless admin explicitly queries)
     if (status) {
       query.status = status;
-    } else {
-      query.status = 'approved';
     }
 
-    // Keyword search filter
-    const searchKeyword = q || search;
-    if (searchKeyword && searchKeyword.trim()) {
-      const regex = new RegExp(searchKeyword.trim(), 'i');
-      query.$or = [{ title: regex }, { subject: regex }, { description: regex }];
+    if (search) {
+      query.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { subject: { $regex: search, $options: 'i' } },
+      ];
     }
 
-    // Department filter
-    if (department && department !== 'All Departments') {
-      query.department = department;
+    if (subject) {
+      query.subject = { $regex: subject, $options: 'i' };
     }
 
-    // Semester filter
-    if (semester && semester !== 'All Semesters') {
+    if (department) {
+      query.department = { $regex: department, $options: 'i' };
+    }
+
+    if (semester) {
       query.semester = semester;
     }
 
-    // Category filter
-    if (category && category !== 'All Categories' && category !== 'all') {
+    if (category) {
       query.category = category;
     }
 
-    // File type filter (pdf, docx, pptx, txt, etc.)
-    const { fileType, rating, minRating } = req.query;
-    if (fileType && fileType !== 'All Formats' && fileType !== 'all') {
-      query.fileType = fileType.toLowerCase().replace('.', '');
-    }
-
-    // Minimum rating filter (e.g. 4+ stars)
-    const activeMinRating = minRating || rating;
-    if (activeMinRating && !isNaN(Number(activeMinRating)) && Number(activeMinRating) > 0) {
-      query.averageRating = { $gte: Number(activeMinRating) };
-    }
-
-    // Sorting strategy
-    let sortQuery = { createdAt: -1 }; // default newest
-    const activeSort = sortBy || sort;
-
-    if (activeSort === 'popular') {
-      sortQuery = { downloads: -1, averageRating: -1 };
-    } else if (activeSort === 'downloads') {
-      sortQuery = { downloads: -1 };
-    } else if (activeSort === 'rating') {
-      sortQuery = { averageRating: -1 };
-    } else if (activeSort === 'newest') {
-      sortQuery = { createdAt: -1 };
-    }
-
-    // Pagination
-    const pageNum = parseInt(page, 10) || 1;
-    const limitNum = parseInt(limit, 10) || 12;
-    const skip = (pageNum - 1) * limitNum;
-
-    const total = await Resource.countDocuments(query);
     const resources = await Resource.find(query)
-      .populate('uploadedBy', 'name email profileImage department role')
-      .sort(sortQuery)
-      .skip(skip)
-      .limit(limitNum);
+      .populate('uploadedBy', 'name email role')
+      .sort({ createdAt: -1 });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       count: resources.length,
-      total,
-      page: pageNum,
-      pages: Math.ceil(total / limitNum) || 1,
-      resources,
+      data: resources,
     });
   } catch (error) {
-    next(error);
+    console.error('[Get Resources Error]:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch resources',
+    });
   }
 };
 
-/**
- * @desc    Get single resource by ID
- * @route   GET /api/resources/:id
- * @access  Public
- */
-const getResourceById = async (req, res, next) => {
+
+// ======================================================
+// GET SINGLE RESOURCE
+// ======================================================
+const getResourceById = async (req, res) => {
   try {
-    let resource = null;
-    if (mongoose.Types.ObjectId.isValid(req.params.id)) {
-      resource = await Resource.findById(req.params.id).populate(
-        'uploadedBy',
-        'name email profileImage department role'
-      );
-    }
+    const resource = await Resource.findById(req.params.id)
+      .populate('uploadedBy', 'name email role');
 
     if (!resource) {
       return res.status(404).json({
@@ -190,91 +85,103 @@ const getResourceById = async (req, res, next) => {
       });
     }
 
-    // If resource is not approved, only owner, faculty, or admin can view
-    if (resource.status !== 'approved') {
-      const isOwner = req.user && resource.uploadedBy._id.toString() === req.user._id.toString();
-      const isFacultyOrAdmin = req.user && (req.user.role === 'faculty' || req.user.role === 'admin');
-      if (!isOwner && !isFacultyOrAdmin) {
-        return res.status(403).json({
-          success: false,
-          message: 'This resource is pending approval and cannot be accessed publicly.',
-        });
-      }
-    }
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      resource,
+      data: resource,
     });
   } catch (error) {
-    next(error);
+    console.error('[Get Resource Error]:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch resource',
+    });
   }
 };
 
-/**
- * @desc    Update a resource (Owner or Admin only)
- * @route   PUT /api/resources/:id
- * @access  Private
- */
-const updateResource = async (req, res, next) => {
+
+// ======================================================
+// CREATE RESOURCE
+// ======================================================
+const createResource = async (req, res) => {
   try {
-    let resource = await Resource.findById(req.params.id);
+    console.log('[Create Resource] Uploaded file:', req.file);
 
-    if (!resource) {
-      return res.status(404).json({
+    if (!req.file) {
+      return res.status(400).json({
         success: false,
-        message: 'Resource not found',
+        message: 'Please upload a file',
       });
     }
 
-    // Authorization rule: Only owner, faculty, or admin can edit
-    const isOwner = resource.uploadedBy.toString() === req.user._id.toString();
-    const isFacultyOrAdmin = req.user.role === 'faculty' || req.user.role === 'admin';
+    const {
+      title,
+      description,
+      subject,
+      department,
+      semester,
+      category,
+    } = req.body;
 
-    if (!isOwner && !isFacultyOrAdmin) {
-      return res.status(403).json({
+    if (!title || !description || !subject || !department || !semester || !category) {
+      return res.status(400).json({
         success: false,
-        message: 'Not authorized: You can only edit your own uploaded resources.',
+        message: 'Please provide all required fields',
       });
     }
 
-    const { title, description, subject, department, semester, category, status } = req.body;
+    const fileUrl = req.file.fileUrl;
+    const publicId = req.file.publicId;
+    const fileType = req.file.fileType;
+    const fileSize = req.file.fileSize;
 
-    if (title) resource.title = title.trim();
-    if (description) resource.description = description.trim();
-    if (subject) resource.subject = subject.trim();
-    if (department) resource.department = department.trim();
-    if (semester) resource.semester = semester.trim();
-    if (category) resource.category = category.trim();
-
-    // Faculty or Admin can moderate status
-    if (status && isFacultyOrAdmin) {
-      resource.status = status;
+    if (!fileUrl) {
+      return res.status(400).json({
+        success: false,
+        message: 'File URL is missing',
+      });
     }
 
-    await resource.save();
+    const resource = await Resource.create({
+      title,
+      description,
+      subject,
+      department,
+      semester,
+      category,
+      fileUrl,
+      publicId,
+      fileType,
+      fileSize,
+      uploadedBy: req.user._id,
+      status: 'approved',
+    });
 
-    const updated = await Resource.findById(resource._id).populate(
-      'uploadedBy',
-      'name email profileImage department role'
-    );
+    console.log('[Create Resource] Resource created:', resource._id);
 
-    res.status(200).json({
+    const populatedResource = await Resource.findById(resource._id)
+      .populate('uploadedBy', 'name email role');
+
+    return res.status(201).json({
       success: true,
-      message: 'Resource updated successfully',
-      resource: updated,
+      message: 'Resource uploaded successfully',
+      data: populatedResource,
     });
   } catch (error) {
-    next(error);
+    console.error('[Create Resource Error]:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to create resource',
+    });
   }
 };
 
-/**
- * @desc    Delete a resource and remove file from Cloudinary (Owner or Admin only)
- * @route   DELETE /api/resources/:id
- * @access  Private
- */
-const deleteResource = async (req, res, next) => {
+
+// ======================================================
+// UPDATE RESOURCE
+// ======================================================
+const updateResource = async (req, res) => {
   try {
     const resource = await Resource.findById(req.params.id);
 
@@ -285,104 +192,78 @@ const deleteResource = async (req, res, next) => {
       });
     }
 
-    // Authorization rule: Only owner, faculty, or admin can delete
-    const isOwner = resource.uploadedBy.toString() === req.user._id.toString();
-    const isFacultyOrAdmin = req.user.role === 'faculty' || req.user.role === 'admin';
-
-    if (!isOwner && !isFacultyOrAdmin) {
+    if (
+      req.user.role !== 'faculty' &&
+      resource.uploadedBy.toString() !== req.user._id.toString()
+    ) {
       return res.status(403).json({
         success: false,
-        message: 'Not authorized: You can only delete your own uploaded resources.',
+        message: 'Not authorized to update this resource',
       });
     }
 
-    // 1. Clean up file from Cloudinary or local storage to prevent orphan files
-    await deleteDocument(resource.publicId);
+    const {
+      title,
+      description,
+      subject,
+      department,
+      semester,
+      category,
+    } = req.body;
 
-    // 2. Delete resource record from MongoDB
-    await resource.deleteOne();
+    if (title !== undefined) resource.title = title;
+    if (description !== undefined) resource.description = description;
+    if (subject !== undefined) resource.subject = subject;
+    if (department !== undefined) resource.department = department;
+    if (semester !== undefined) resource.semester = semester;
+    if (category !== undefined) resource.category = category;
 
-    res.status(200).json({
-      success: true,
-      message: 'Resource and storage file deleted successfully',
-      id: req.params.id,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Get resources uploaded by the authenticated student
- * @route   GET /api/resources/my-uploads
- * @access  Private
- */
-const getMyUploads = async (req, res, next) => {
-  try {
-    const resources = await Resource.find({ uploadedBy: req.user._id })
-      .populate('uploadedBy', 'name email profileImage department role')
-      .sort({ createdAt: -1 });
-
-    res.status(200).json({
-      success: true,
-      count: resources.length,
-      resources,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Secure download endpoint - verifies resource and increments download count
- * @route   GET /api/resources/:id/download
- * @access  Public
- */
-const downloadResource = async (req, res, next) => {
-  try {
-    let resource = null;
-    if (mongoose.Types.ObjectId.isValid(req.params.id)) {
-      resource = await Resource.findById(req.params.id);
-    }
-
-    // Support for sample/mock IDs (e.g. res-1, res-2, etc.)
-    if (!resource && req.params.id && req.params.id.startsWith('res-')) {
-      const mockTitles = {
-        'res-1': 'Data_Structures_and_Algorithms_Notes.pdf',
-        'res-2': 'Operating_Systems_Midterm_Papers.pdf',
-        'res-3': 'Digital_Signal_Processing_Lab_Manual.pdf',
-        'res-4': 'Engineering_Thermodynamics_Handbook.pdf',
-        'res-5': 'Discrete_Mathematics_Question_Bank.pdf',
-        'res-6': 'Microprocessors_Embedded_Systems.pdf',
-        'res-7': 'Financial_Management_Guide.pdf',
-      };
-      const fallbackFileName = mockTitles[req.params.id] || `NoteSphere_Academic_Resource_${req.params.id}.pdf`;
-
-      if (req.query.action === 'file' || req.query.stream === 'true') {
-        const titleForDoc = fallbackFileName.replace(/\.pdf$/i, '').replace(/_/g, ' ');
-        const validPdfBuffer = generateValidPdf(
-          titleForDoc,
-          'Academic Study Resource',
-          'Computer Science',
-          'NoteSphere Contributor'
-        );
-        res.setHeader('Content-Disposition', `attachment; filename="${fallbackFileName}"`);
-        res.setHeader('Content-Type', 'application/pdf');
-        return res.send(validPdfBuffer);
+    // If a new file was uploaded
+    if (req.file) {
+      if (resource.publicId) {
+        try {
+          await deleteDocument(resource.publicId);
+        } catch (deleteError) {
+          console.error(
+            '[Old Cloudinary File Delete Error]:',
+            deleteError.message
+          );
+        }
       }
 
-      const port = process.env.PORT || 5000;
-      const baseUrl = process.env.BASE_URL || `http://localhost:${port}`;
-      return res.status(200).json({
-        success: true,
-        message: 'Download initiated successfully',
-        downloadUrl: `/api/resources/${req.params.id}/download?action=file`,
-        directDownloadUrl: `/api/resources/${req.params.id}/download?action=file`,
-        fileName: fallbackFileName,
-        fileType: 'pdf',
-        downloads: 1,
-      });
+      resource.fileUrl = req.file.fileUrl;
+      resource.publicId = req.file.publicId;
+      resource.fileType = req.file.fileType;
+      resource.fileSize = req.file.fileSize;
     }
+
+    await resource.save();
+
+    const updatedResource = await Resource.findById(resource._id)
+      .populate('uploadedBy', 'name email role');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Resource updated successfully',
+      data: updatedResource,
+    });
+  } catch (error) {
+    console.error('[Update Resource Error]:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to update resource',
+    });
+  }
+};
+
+
+// ======================================================
+// DELETE RESOURCE
+// ======================================================
+const deleteResource = async (req, res) => {
+  try {
+    const resource = await Resource.findById(req.params.id);
 
     if (!resource) {
       return res.status(404).json({
@@ -391,122 +272,285 @@ const downloadResource = async (req, res, next) => {
       });
     }
 
-    if (resource.status !== 'approved') {
-      const isOwner = req.user && resource.uploadedBy.toString() === req.user._id.toString();
-      const isFacultyOrAdmin = req.user && (req.user.role === 'faculty' || req.user.role === 'admin');
-      if (!isOwner && !isFacultyOrAdmin) {
-        return res.status(403).json({
-          success: false,
-          message: 'Cannot download a resource that is not approved.',
-        });
+    if (
+      req.user.role !== 'faculty' &&
+      resource.uploadedBy.toString() !== req.user._id.toString()
+    ) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to delete this resource',
+      });
+    }
+
+    if (resource.publicId) {
+      try {
+        await deleteDocument(resource.publicId);
+      } catch (deleteError) {
+        console.error(
+          '[Cloudinary Delete Error]:',
+          deleteError.message
+        );
       }
     }
 
-    // Increment download counter atomically
-    resource.downloads += 1;
-    await resource.save();
+    await Resource.findByIdAndDelete(req.params.id);
 
-    // Sanitize resource title for downloaded file name
-    const cleanTitle = resource.title
-      .replace(/[^a-zA-Z0-9_\-\s]/g, '')
-      .trim()
-      .replace(/\s+/g, '_');
-    const ext = resource.fileType.startsWith('.') ? resource.fileType : `.${resource.fileType}`;
-    const downloadFileName = `${cleanTitle}${ext}`;
-
-    // Action 1: If requested directly as a file download (action=file or stream=true)
-    if (req.query.action === 'file' || req.query.stream === 'true') {
-      // Check if local file
-      if (resource.publicId && resource.publicId.startsWith('local-')) {
-        const localFileName = resource.publicId.replace('local-', '');
-        const localFilePath = path.join(__dirname, '../uploads/resources', localFileName);
-        if (fs.existsSync(localFilePath)) {
-          return res.download(localFilePath, downloadFileName);
-        }
-      }
-
-      // If Cloudinary file, redirect with attachment disposition
-      if (resource.fileUrl) {
-        if (resource.fileUrl.includes('cloudinary.com') && !resource.fileUrl.includes('fl_attachment')) {
-          const attachmentUrl = resource.fileUrl.replace('/upload/', `/upload/fl_attachment:${encodeURIComponent(cleanTitle)}/`);
-          return res.redirect(attachmentUrl);
-        }
-        return res.redirect(resource.fileUrl);
-      }
-
-      // Fallback: stream generated PDF buffer
-      const fallbackPdf = generateValidPdf(
-        resource.title,
-        resource.subject,
-        resource.department,
-        'NoteSphere Student'
-      );
-      res.setHeader('Content-Disposition', `attachment; filename="${downloadFileName}"`);
-      res.setHeader('Content-Type', 'application/pdf');
-      return res.send(fallbackPdf);
-    }
-
-    // Action 2: Return JSON metadata for client-side blob download
-    const directFileUrl = `/api/resources/${resource._id}/download?action=file`;
-
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: 'Download initiated successfully',
-      downloadUrl: resource.fileUrl,
-      directDownloadUrl: directFileUrl,
-      fileName: downloadFileName,
-      fileType: resource.fileType,
-      fileSize: resource.fileSize,
-      downloads: resource.downloads,
+      message: 'Resource deleted successfully',
     });
   } catch (error) {
-    next(error);
+    console.error('[Delete Resource Error]:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete resource',
+    });
   }
 };
 
-/**
- * @desc    Get autocomplete search suggestions
- * @route   GET /api/resources/suggestions
- * @access  Public
- */
-const getSearchSuggestions = async (req, res, next) => {
+
+// ======================================================
+// DOWNLOAD / PREVIEW RESOURCE
+// ======================================================
+const downloadResource = async (req, res) => {
   try {
-    const { q } = req.query;
-    if (!q || !q.trim()) {
-      return res.status(200).json({ success: true, suggestions: [] });
+    const resource = await Resource.findById(req.params.id);
+
+    if (!resource) {
+      return res.status(404).json({
+        success: false,
+        message: 'Resource not found',
+      });
     }
 
-    const regex = new RegExp(q.trim(), 'i');
-    const matches = await Resource.find(
-      {
-        status: 'approved',
-        $or: [{ title: regex }, { subject: regex }],
+    if (!resource.fileUrl) {
+      return res.status(404).json({
+        success: false,
+        message: 'File URL not found',
+      });
+    }
+
+    console.log('===============================================');
+    console.log('[Cloudinary Preview]');
+    console.log('Resource ID:', resource._id);
+    console.log('Original URL:', resource.fileUrl);
+    console.log('===============================================');
+
+    const response = await axios.get(resource.fileUrl, {
+      responseType: 'arraybuffer',
+      validateStatus: () => true,
+      headers: {
+        'User-Agent': 'Mozilla/5.0',
+        Accept: 'application/pdf,application/octet-stream,*/*',
       },
-      'title subject department category fileType'
-    ).limit(8);
+    });
 
-    const suggestions = matches.map((m) => ({
-      id: m._id,
-      title: m.title,
-      subject: m.subject,
-      department: m.department,
-      category: m.category,
-      fileType: m.fileType,
-    }));
+    console.log('[Cloudinary Preview] Status:', response.status);
+    console.log(
+      '[Cloudinary Preview] Content-Type:',
+      response.headers['content-type']
+    );
 
-    res.status(200).json({ success: true, suggestions });
+    // Cloudinary rejected the request
+    if (response.status !== 200) {
+      console.error(
+        '[Cloudinary Preview Error] Cloudinary returned status:',
+        response.status
+      );
+
+      return res.status(502).json({
+        success: false,
+        message: `Cloudinary returned status ${response.status}`,
+      });
+    }
+
+    const contentType =
+      response.headers['content-type'] || 'application/pdf';
+
+    res.setHeader('Content-Type', contentType);
+
+    res.setHeader(
+      'Content-Length',
+      response.data.length
+    );
+
+    // Display PDF inside browser
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${(resource.title || 'document').replace(
+        /[^a-zA-Z0-9-_ ]/g,
+        ''
+      )}.pdf"`
+    );
+
+    res.setHeader(
+      'Cache-Control',
+      'public, max-age=3600'
+    );
+
+    return res.send(response.data);
   } catch (error) {
-    next(error);
+    console.error('===============================================');
+    console.error('[Cloudinary Preview Error]');
+    console.error('Message:', error.message);
+
+    if (error.response) {
+      console.error('Status:', error.response.status);
+      console.error('URL:', error.config?.url);
+    }
+
+    console.error('===============================================');
+
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to preview file from Cloudinary',
+    });
   }
 };
 
+
+// ======================================================
+// GET MY UPLOADS
+// ======================================================
+const getMyUploads = async (req, res) => {
+  try {
+    const resources = await Resource.find({
+      uploadedBy: req.user._id,
+    })
+      .populate('uploadedBy', 'name email role')
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: resources.length,
+      data: resources,
+    });
+  } catch (error) {
+    console.error('[Get My Uploads Error]:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch your uploads',
+    });
+  }
+};
+
+
+// ======================================================
+// GET MY BOOKMARKS
+// ======================================================
+const getMyBookmarks = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .populate({
+        path: 'bookmarks',
+        populate: {
+          path: 'uploadedBy',
+          select: 'name email role',
+        },
+      });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      count: user.bookmarks ? user.bookmarks.length : 0,
+      data: user.bookmarks || [],
+    });
+  } catch (error) {
+    console.error('[Get My Bookmarks Error]:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch bookmarks',
+    });
+  }
+};
+
+
+// ======================================================
+// TOGGLE BOOKMARK
+// ======================================================
+const toggleBookmark = async (req, res) => {
+  try {
+    const resourceId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(resourceId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid resource ID',
+      });
+    }
+
+    const resource = await Resource.findById(resourceId);
+
+    if (!resource) {
+      return res.status(404).json({
+        success: false,
+        message: 'Resource not found',
+      });
+    }
+
+    const user = await User.findById(req.user._id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    const bookmarkIndex = user.bookmarks.findIndex(
+      (bookmark) => bookmark.toString() === resourceId
+    );
+
+    let bookmarked;
+
+    if (bookmarkIndex === -1) {
+      user.bookmarks.push(resourceId);
+      bookmarked = true;
+    } else {
+      user.bookmarks.splice(bookmarkIndex, 1);
+      bookmarked = false;
+    }
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      bookmarked,
+      message: bookmarked
+        ? 'Resource bookmarked successfully'
+        : 'Resource removed from bookmarks',
+    });
+  } catch (error) {
+    console.error('[Toggle Bookmark Error]:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update bookmark',
+    });
+  }
+};
+
+
+// ======================================================
+// EXPORTS
+// ======================================================
 module.exports = {
-  createResource,
   getResources,
   getResourceById,
+  createResource,
   updateResource,
   deleteResource,
-  getMyUploads,
   downloadResource,
-  getSearchSuggestions,
+  getMyUploads,
+  getMyBookmarks,
+  toggleBookmark,
 };

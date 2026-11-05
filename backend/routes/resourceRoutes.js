@@ -1,41 +1,118 @@
 const express = require('express');
-const {
-  createResource,
-  getResources,
-  getResourceById,
-  updateResource,
-  deleteResource,
-  getMyUploads,
-  downloadResource,
-  getSearchSuggestions,
-} = require('../controllers/resourceController');
-const { protect } = require('../middleware/authMiddleware');
-const { upload } = require('../middleware/uploadMiddleware');
-const reviewRouter = require('./reviewRoutes');
 
 const router = express.Router();
 
-// Public discovery
-router.get('/', getResources);
+const {
+  getResources,
+  getResourceById,
+  createResource,
+  updateResource,
+  deleteResource,
+  downloadResource,
+  getMyUploads,
+  getMyBookmarks,
+  toggleBookmark,
+} = require('../controllers/resourceController');
 
-// Autocomplete search suggestions (must be defined before /:id)
-router.get('/suggestions', getSearchSuggestions);
+const {
+  protect,
+} = require('../middleware/authMiddleware');
 
-// Protected my-uploads (must be defined before /:id)
-router.get('/my-uploads', protect, getMyUploads);
+const {
+  upload,
+  processUpload,
+} = require('../middleware/uploadMiddleware');
 
-// Upload resource (Protected with Multer file interception)
-router.post('/', protect, upload.single('file'), createResource);
 
-// Reviews sub-resource routing
-router.use('/:id/reviews', reviewRouter);
+// ======================================================
+// GET ALL RESOURCES
+// ======================================================
+router.get(
+  '/',
+  getResources
+);
 
-// Resource details & Download
-router.get('/:id', getResourceById);
-router.get('/:id/download', downloadResource);
 
-// Protected edits & deletions
-router.put('/:id', protect, updateResource);
-router.delete('/:id', protect, deleteResource);
+// ======================================================
+// GET MY UPLOADS
+// ======================================================
+router.get(
+  '/my-uploads',
+  protect,
+  getMyUploads
+);
+
+
+// ======================================================
+// GET MY BOOKMARKS
+// ======================================================
+router.get(
+  '/my-bookmarks',
+  protect,
+  getMyBookmarks
+);
+
+
+// ======================================================
+// GET SINGLE RESOURCE
+// ======================================================
+router.get(
+  '/:id',
+  getResourceById
+);
+
+
+// ======================================================
+// PREVIEW / DOWNLOAD PDF
+// ======================================================
+router.get(
+  '/:id/download',
+  downloadResource
+);
+
+
+// ======================================================
+// CREATE RESOURCE
+// ======================================================
+router.post(
+  '/',
+  protect,
+  upload.single('file'),
+  processUpload,
+  createResource
+);
+
+
+// ======================================================
+// UPDATE RESOURCE
+// ======================================================
+router.put(
+  '/:id',
+  protect,
+  upload.single('file'),
+  processUpload,
+  updateResource
+);
+
+
+// ======================================================
+// DELETE RESOURCE
+// ======================================================
+router.delete(
+  '/:id',
+  protect,
+  deleteResource
+);
+
+
+// ======================================================
+// TOGGLE BOOKMARK
+// ======================================================
+router.post(
+  '/:id/bookmark',
+  protect,
+  toggleBookmark
+);
+
 
 module.exports = router;
