@@ -1,11 +1,10 @@
-
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
 const dotenv = require('dotenv');
 
-// Load environment variables from backend/.env explicitly
+// Load environment variables
 dotenv.config({ path: path.join(__dirname, '.env') });
 
 const connectDB = require('./config/db');
@@ -18,13 +17,12 @@ const facultyRoutes = require('./routes/facultyRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const { notFound, errorHandler } = require('./middleware/errorMiddleware');
 
-// Initialize Express application
 const app = express();
 
 // Connect to MongoDB
 connectDB();
 
-// Setup Cross-Origin Resource Sharing (CORS)
+// CORS
 const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
 
 app.use(
@@ -38,15 +36,15 @@ app.use(
   })
 );
 
-// Body and Cookie parsing middlewares
+// Body parsing
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Serve local fallback uploads statically
+// Local fallback uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Mount API Routes
+// API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/resources', resourceRoutes);
 app.use('/api/bookmarks', bookmarkRoutes);
@@ -55,7 +53,7 @@ app.use('/api/faculty', facultyRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/reports', reportRoutes);
 
-// Root welcome route
+// Root route
 app.get('/', (req, res) => {
   res.json({
     status: 'online',
@@ -65,7 +63,7 @@ app.get('/', (req, res) => {
   });
 });
 
-// Health check endpoint
+// Health check
 app.get('/api/health', (req, res) => {
   res.status(200).json({
     status: 'ok',
@@ -76,11 +74,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Global Error Handling Middlewares
+// Error handling
 app.use(notFound);
 app.use(errorHandler);
 
-// Start Server
+// Server
 const PORT = process.env.PORT || 5000;
 const HOST = '0.0.0.0';
 
@@ -90,13 +88,13 @@ if (require.main === module) {
   server = app.listen(PORT, HOST, () => {
     console.log('===============================================');
     console.log(
-      ` NoteSphere Backend Server Running on http://${HOST}:${PORT}`
+      `NoteSphere Backend Server Running on http://${HOST}:${PORT}`
     );
     console.log(
-      ` Environment: ${process.env.NODE_ENV || 'development'}`
+      `Environment: ${process.env.NODE_ENV || 'development'}`
     );
     console.log(
-      ` Health check: http://localhost:${PORT}/api/health`
+      `Health check: http://localhost:${PORT}/api/health`
     );
     console.log('===============================================');
   });
@@ -104,7 +102,7 @@ if (require.main === module) {
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
       console.error(
-        `\n[PORT CONFLICT] Port ${PORT} is already in use:`,
+        `[PORT CONFLICT] Port ${PORT} is already in use:`,
         err.message
       );
       process.exit(1);
@@ -116,7 +114,7 @@ if (require.main === module) {
 }
 
 app.server = server;
+
 module.exports = app;
 module.exports.app = app;
 module.exports.server = server;
-```
